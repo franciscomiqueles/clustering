@@ -61,12 +61,20 @@ class Clust:
 
         self.n_cluster = None
         self.cls_spike = None
-        self.ward_spike = None
+
+    def read_params(self):
+        with open("params.json") as p:
+            self.params = json.load(p)
     
+        # Create output folder if it does not exist
+        if os.path.isdir(self.params['Output']) == False:
+            os.mkdir(self.params['Output'])
+        
     def get_bias_histogram(self):
         
         plt.figure(figsize=(16,self.n_cluster*1))
 
+        ward_spike = cluster.hierarchy.linkage(self.spike_dst, method='ward')
         plot_stims = [0,1]
         plot_widths = [1.2, 0.8, 3, 1.5, 1]
         fs=12
@@ -152,7 +160,7 @@ class Clust:
         p.x1 = p.x1-0.02
         ax.set_position(p)
         with plt.rc_context({'lines.linewidth': 2, 'font.size':fs, 'axes.titleweight': 'bold'}):
-            dend = cluster.hierarchy.dendrogram(self.ward_spike, p=np.unique(self.cls_spike).shape[0], distance_sort='ascending',
+            dend = cluster.hierarchy.dendrogram(ward_spike, p=np.unique(self.cls_spike).shape[0], distance_sort='ascending',
                                         truncate_mode='lastp',orientation='left')
 
             
@@ -206,12 +214,24 @@ class Clust:
             fig.clear()
             plt.close()
 
-    def get_dendogram_and_tsne(self):
+    def get_tsne(self):
+        fig, ax = plt.subplots()
+
+        model = TSNE(n_components=2, random_state=0, perplexity=30)#,init='pca')
+        proj = model.fit_transform(self.chirp_psth)
+
+        n_flat_clusters = np.unique(self.cls_spike).shape[0]
+        show_order = np.unique(self.cls_spike)[::-1] - 1
+
+        ax.scatter(proj[:, 0], proj[:, 1], c=show_order[self.cls_spike - 1], cmap=ListedColormap(sns.hls_palette(n_flat_clusters, l=0.6, s=0.6).as_hex()))
+        fig.savefig('{}/tsne.png'.format(self.cls_folder))
+
+    def get_dendogram(self):
         # Mutal Info
         sqr_spike_dst = squareform(self.spike_dst)
         sqr_isi_dst = squareform(self.isi_dst)
 
-        self.ward_spike = cluster.hierarchy.linkage(self.spike_dst, method='ward')
+        ward_spike = cluster.hierarchy.linkage(self.spike_dst, method='ward')
         ward_isi = cluster.hierarchy.linkage(self.isi_dst, method='ward')
 
         min_qclust = 6
@@ -220,7 +240,7 @@ class Clust:
         ncls = np.arange(min_qclust, max_qclust, 1)
         metric_scores = np.zeros(ncls.shape[0])
         for i, t in enumerate(ncls):
-            self.cls_spike = cluster.hierarchy.fcluster(self.ward_spike, t=t, criterion='maxclust')
+            self.cls_spike = cluster.hierarchy.fcluster(ward_spike, t=t, criterion='maxclust')
             cls_isi = cluster.hierarchy.fcluster(ward_isi, t=t, criterion='maxclust')
             metric_scores[i] = metrics.adjusted_mutual_info_score(cls_isi, self.cls_spike)
             
@@ -237,24 +257,12 @@ class Clust:
 
         # Dendogram
         self.n_cluster = max_cls
-        self.cls_spike = cluster.hierarchy.fcluster(self.ward_spike, t=self.n_cluster, criterion='maxclust')
+        self.cls_spike = cluster.hierarchy.fcluster(ward_spike, t=self.n_cluster, criterion='maxclust')
         fig = plt.figure()
-        dn = cluster.hierarchy.dendrogram(self.ward_spike, p=np.unique(self.cls_spike).shape[0], distance_sort='ascending',
+        dn = cluster.hierarchy.dendrogram(ward_spike, p=np.unique(self.cls_spike).shape[0], distance_sort='ascending',
                                         truncate_mode='lastp')
         plt.tight_layout()
         fig.savefig('{}/dendogram.png'.format(self.cls_folder))
-        #TSNE 
-        
-        fig, ax = plt.subplots()
-
-        model = TSNE(n_components=2, random_state=0, perplexity=30)#,init='pca')
-        proj = model.fit_transform(self.chirp_psth)
-
-        n_flat_clusters = np.unique(self.cls_spike).shape[0]
-        show_order = np.unique(self.cls_spike)[::-1] - 1
-
-        ax.scatter(proj[:, 0], proj[:, 1], c=show_order[self.cls_spike - 1], cmap=ListedColormap(sns.hls_palette(n_flat_clusters, l=0.6, s=0.6).as_hex()))
-        fig.savefig('{}/tsne.png'.format(self.cls_folder))
 
     def set_folder(self):
         if os.path.isdir(self.params['Output']) == False:
@@ -306,12 +314,6 @@ class Clust:
         stimuli = chirp_stimuli["full_signal"]
         
         rootdir = os.getcwd()
-        with open("params.json") as p:
-            self.params = json.load(p)
-    
-        # Create output folder if it does not exist
-        if os.path.isdir(self.params['Output']) == False:
-            os.mkdir(self.params['Output'])
         
         for exp_path in self.params['Experiments']:
             os.chdir(exp_path)

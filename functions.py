@@ -177,6 +177,7 @@ def compute_ISI_on_flat_pair(arg):
     return np.nanmean(ds[np.logical_not(np.logical_or(np.isnan(ds), np.isinf(ds)))])
 
 def format_to_pyspike(trials, stim_dur):
+
     st = []
     for t in trials:
         st.append(pyspike.SpikeTrain(t, stim_dur))

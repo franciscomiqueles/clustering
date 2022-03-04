@@ -33,6 +33,7 @@ from scipy.stats import norm
 from tqdm import tqdm
 from chirp import get_chirp_subevents, get_pop_response, chirp_def_args, chirp_generator
 from functions import format_to_pyspike, get_cell_trials, compute_ISI_on_flat_pair, compute_SPIKE_on_flat_pair, flat_unit_pairs, format_to_pyspike
+from Cell import Cell
 import json
 
 config = ConfigParser(interpolation=ExtendedInterpolation())
@@ -50,9 +51,6 @@ class Clust:
 
         self.pcells = None
         self.params = None
-
-        self.flash_time = None
-        self.chirp_time = None
 
         self.cls_folder = folder
 
@@ -72,6 +70,14 @@ class Clust:
         
     def get_bias_histogram(self):
         
+        chirp_dur = 35 
+        psth_bin = 0.06  # In sec
+        fit_resolution = 0.001  # In sec
+        chirp_time = np.linspace(0, chirp_dur, int(np.ceil((chirp_dur) / fit_resolution)))
+
+        flash_dur = 6
+        flash_time = np.linspace(0, flash_dur, int(np.ceil((flash_dur) / fit_resolution)))
+
         plt.figure(figsize=(16,self.n_cluster*1))
 
         ward_spike = cluster.hierarchy.linkage(self.spike_dst, method='ward')
@@ -97,8 +103,8 @@ class Clust:
                     bias_mean.append(bias)
                     bias_mean_aux.append(bias / 1000)
                 fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-                ax[0].plot(self.flash_time, flash)
-                ax[1].plot(self.chirp_time, chirp)     
+                ax[0].plot(flash_time, flash)
+                ax[1].plot(chirp_time, chirp)     
                 [_ax.clear() for _ax in ax]
                 fig.clf()
                 fig.clear()
@@ -110,6 +116,9 @@ class Clust:
             ax.hist(bias_mean, bins = 25, range=[-1, 1])
             mean,std = norm.fit(bias_mean)
             xmin, xmax = plt.xlim()
+            if std==0:
+                std=0.25
+            
             x = np.linspace(xmin, xmax, 100)
             y = norm.pdf(x, mean, std)
             ax.plot(x, y)
@@ -124,7 +133,7 @@ class Clust:
             ax.spines['right'].set_visible(False)
             
             ax = plt.subplot(gs[(self.n_cluster-(i)),2])
-            ax.plot(self.chirp_time, chirp_mean)
+            ax.plot(chirp_time, chirp_mean)
             if(i == self.n_cluster):
                 ax.set_title("Chirp Response", fontsize=16)
             plt.xticks(())
@@ -135,7 +144,7 @@ class Clust:
             ax.spines['right'].set_visible(False)
             
             ax = plt.subplot(gs[(self.n_cluster-(i)),1])
-            ax.plot(self.flash_time, flash_mean)
+            ax.plot(flash_time, flash_mean)
             if(i == self.n_cluster):
                 ax.set_title("Flash Response", fontsize=16)
             plt.xticks(())
@@ -172,6 +181,13 @@ class Clust:
         plt.savefig('{}/dend_flash_chirp.png'.format(self.cls_folder))
 
     def save_data(self):
+        chirp_dur = 35 
+        psth_bin = 0.06  # In sec
+        fit_resolution = 0.001  # In sec
+        chirp_time = np.linspace(0, chirp_dur, int(np.ceil((chirp_dur) / fit_resolution)))
+        
+        flash_dur = 6
+        flash_time = np.linspace(0, flash_dur, int(np.ceil((flash_dur) / fit_resolution)))
 
         np.save('{}/exp_id.npy'.format(self.cls_folder), np.array(self.exp_unit))
         np.save('{}/clust_result.npy'.format(self.cls_folder), np.array(self.cls_spike))
@@ -188,8 +204,8 @@ class Clust:
 
             for (uid, chirp, flash) in zip(cls_units, cls_chirp, cls_flash):
                 fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-                ax[0].plot(self.flash_time, flash)
-                ax[1].plot(self.chirp_time, chirp)
+                ax[0].plot(flash_time, flash)
+                ax[1].plot(chirp_time, chirp)
 
                 ax[0].set_title('{}, {} flash'.format(uid[0], uid[1]))
                 ax[1].set_title('{}, {} chirp'.format(uid[0], uid[1]))
@@ -202,8 +218,8 @@ class Clust:
                 plt.close()
                         
             fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-            ax[0].plot(self.flash_time, np.mean(cls_flash, axis=0))
-            ax[1].plot(self.chirp_time, np.mean(cls_chirp, axis=0))
+            ax[0].plot(flash_time, np.mean(cls_flash, axis=0))
+            ax[1].plot(chirp_time, np.mean(cls_chirp, axis=0))
             ax[0].set_title('Mean flash')
             ax[1].set_title('Mean chirp')
             
@@ -386,22 +402,8 @@ class Clust:
             bound_time = np.array([freq_time[:, 0], adap2_time[:, 1]]).T
             flash_bound = np.array([on_time[:, 0], off_time[:, 1]]).T / 1000
 
-
-            chirp_dur = 35 
             psth_bin = 0.06  # In sec
             fit_resolution = 0.001  # In sec
-
-            self.chirp_time = np.linspace(0, chirp_dur, int(np.ceil((chirp_dur) / fit_resolution)))
-            chirp_bins = np.linspace(0, chirp_dur, int(np.ceil((chirp_dur) / psth_bin)))
-
-            
-            flash_dur = 6
-            self.flash_time = np.linspace(0, flash_dur, int(np.ceil((flash_dur) / fit_resolution)))
-            flash_bins = np.linspace(0, flash_dur, int(np.ceil((flash_dur) / psth_bin)))
-            
-            color_dur_2 = 12
-            color_time = np.linspace(0, color_dur_2, int(np.ceil((color_dur_2) / fit_resolution)))
-            color_bins = np.linspace(0, color_dur_2, int(np.ceil((color_dur_2) / psth_bin)))
 
             filtered_cells = 0
 
@@ -420,97 +422,22 @@ class Clust:
                 else: self.pcells = self.pcells.append(feat.reset_index(), ignore_index=True)
                 
                 for i, idx in enumerate(idxs):
-
-                    if feat['QI'][uidx[i]] < 0.25:
-                        filtered_cells += 1
-                        continue
-                    
-                    trials = []
-                    trials_color = []
-                    sec_trials = []
-                    sec_trials_color = []
-                    chirp_trials_cell = []
-                    flash_trials_cell = []
-                    
-                    chirp_trials = spkt.get_trials(np.unique(spks['spiketimes'][idx][:].flatten() / sr), on_time[:, 0], adap2_time[:, 1])
-                    # #Blue flash
-                    # blue_trials = spkt.get_trials(np.unique(spks['spiketimes'][idx][:].flatten() / sr), blue_time[:, 0], blue_time[:, 1])
-                    # #Green flash
-                    # green_trials = spkt.get_trials(np.unique(spks['spiketimes'][idx][:].flatten() / sr), green_time[:, 0], green_time[:, 1])
-
-                    # for (b, g, c) in zip(blue_trials, green_trials, chirp_trials):
-
-                    #     t = c
-                    #     t_color = np.concatenate([b, g + blue_dur])
-                    #     trials.append(t)
-                    #     trials_color.append(t_color)
-                    #     sec_trials.append(t / 1000)
-                    #     sec_trials_color.append(t_color / 1000)
-                        
-                    #     m = np.zeros_like(t, dtype=bool)
-                    #     m[np.unique(t, return_index=True)[1]] = True
-                    #     if t[~m].shape[0] > 0:
-                    #         print(t[~m])
-                    for (c) in  chirp_trials:
-                        t = c
-                        trials.append(t)
-                        sec_trials.append(t / 1000)
-                        
-                        m = np.zeros_like(t, dtype=bool)
-                        m[np.unique(t, return_index=True)[1]] = True
-                        if t[~m].shape[0] > 0:
-                            print(t[~m])
-
-                    low_spikes = False
-
-                    for t in trials:
-
-                        if t.shape[0] < 20:
-
-                            low_spikes = True
-                            break 
-
-                    if low_spikes:
-
-                        filtered_cells += 1
-                        continue
-                        
                     indexer = ctype_map[feat[feat.index == uidx[i]].flash_type[0]]
+                    quality = feat['QI'][uidx[i]]                   
+                    bias = feat["bias_idx"][uidx[i]]
+                    cell = Cell((exp, uidx[i], idx), indexer, quality, bias, spks, sr, idx, on_time, adap2_time, flash_bound)
+                    cell.set_chirp_response(spks, idx, on_time, adap2_time, sr)
+                    cell.set_flash_response(spks, idx, flash_bound, sr)
+                    cell.check_quality()
+                    if(cell.low_spikes):
+                        filtered_cells += 1
+                    else:
+                        self.exp_unit.append(cell.exp_unit)
+                        self.spiketimes.append(cell.spiketimes)
+                        self.chirp_psth.append(cell.chirp_psth)
+                        self.flash_psth.append(cell.flash_psth)
+                        self.bias_index.append(cell.bias_index)
                     
-                    # for j in range(len(trials)):
-                        
-                    #     (psth, _) = np.histogram(trials[j] / 1000, bins=chirp_bins)
-                    #     chirp_resp = spkt.est_pdf([trials[j]/ 1000], self.chirp_time, bandwidth=psth_bin, norm_factor=psth.max())                   
-                    #     chirp_trials_cell.append(chirp_resp)
-
-                    #     (psth, _) = np.histogram(trials_color[j]/1000, bins=color_bins)
-                    #     flash_resp = spkt.est_pdf([trials_color[j]/1000], color_time, bandwidth=psth_bin, norm_factor=psth.max())
-
-                    #     flash_trials_cell.append(flash_resp)
-                            
-                    #BIAS INDEX
-                    self.bias_index.append(feat["bias_idx"][uidx[i]])
-                    
-                    # spikes_color = spkt.flatten_trials(trials_color)
-                    # (psth, _) = np.histogram(spikes_color / 1000, bins=color_bins)
-                    # color_resp = spkt.est_pdf(sec_trials_color , color_time, bandwidth=psth_bin, norm_factor=psth.max())
-                    
-
-                    spikes_chirp = spkt.flatten_trials(sec_trials)
-                    (psth, _) = np.histogram(spikes_chirp, bins=chirp_bins)
-                    chirp_resp = spkt.est_pdf(sec_trials, self.chirp_time, bandwidth=psth_bin, norm_factor=psth.max())
-                    
-                    self.exp_unit.append((exp, uidx[i], idx))
-                    self.spiketimes.append(np.asarray(format_to_pyspike(trials, (chirp_dur) * 1000), dtype=object))
-                    self.chirp_psth.append(chirp_resp)
-                    
-                    # Flash signal for plotting later
-                    trials = spkt.get_trials(np.unique(spks['spiketimes'][idx][:].flatten() / sr) / 1000, flash_bound[:, 0], flash_bound[:, 1])
-                    spikes_flash = spkt.flatten_trials(trials)
-                    (psth, _) = np.histogram(spikes_flash, bins=flash_bins)
-                    flash_resp = spkt.est_pdf(trials, self.flash_time, bandwidth=psth_bin, norm_factor=psth.max())
-                    self.flash_psth.append(flash_resp)
-             
                     # gs = get_cell_trials(chirp_trials_cell, flash_trials_cell, self.chirp_time, color_time, chirp_resp, color_resp, exp, uidx[i], stimuli, indexer, self.cls_folder)
             print('{} cells below minimum spikes constraint.'.format(filtered_cells))
             print('{} cells valid for {}\n'.format(len(uidx) - filtered_cells, exp))

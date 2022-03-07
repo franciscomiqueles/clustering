@@ -422,12 +422,13 @@ class Clust:
                 else: self.pcells = self.pcells.append(feat.reset_index(), ignore_index=True)
                 
                 for i, idx in enumerate(idxs):
+                    name = (exp, uidx[i], idx)
                     indexer = ctype_map[feat[feat.index == uidx[i]].flash_type[0]]
                     quality = feat['QI'][uidx[i]]                   
                     bias = feat["bias_idx"][uidx[i]]
-                    cell = Cell((exp, uidx[i], idx), indexer, quality, bias, spks, sr, idx, on_time, adap2_time, flash_bound)
-                    cell.set_chirp_response(spks, idx, on_time, adap2_time, sr)
-                    cell.set_flash_response(spks, idx, flash_bound, sr)
+                    cell = Cell(name, indexer, quality, bias, spks)
+                    cell.set_chirp_response(spks, on_time, adap2_time, sr)
+                    cell.set_flash_response(spks, flash_bound, sr)
                     cell.check_quality()
                     if(cell.low_spikes):
                         filtered_cells += 1

@@ -4,6 +4,27 @@ import matplotlib.gridspec as gridspec
 import os
 import numpy as np
 import pyspike
+def create_subplot_ax(position, plot = None, visible = True, tick = True,  title = "", xlim = None , ylim = None, y = None ):
+    ax = plt.subplot(position)
+    if(len(plot) == 1):
+        ax.plot(plot)
+    if(len(plot) == 2):
+        ax.plot(plot[0], plot[1])
+    else:
+        print("No plot")
+    
+    if(not visible):
+        ax.spines['top'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+    if(tick):
+        plt.xticks(())
+        plt.yticks(())
+    ax.set_title("{}".format(title), fontsize=20, y = y)
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    return ax
 
 def get_cell_trials(chirp_trials, flash_trials, chirp_time, flash_time, chirp_psth, flash_psth, exp, uidx, stimuli, indexer, cls_folder):
     fig = plt.figure(figsize=(16,20))

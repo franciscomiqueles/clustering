@@ -48,17 +48,24 @@ class Clust:
         self.chirp_psth = []
         self.flash_psth = []
         self.bias_index = []
-
+        self.cells = []
+        
         self.pcells = None
         self.params = None
 
         self.cls_folder = folder
 
+        self.chirp_time = None
+        self.flash_time = None
+        self.color_time = None
+
         self.spike_dst = None
         self.isi_dst = None
 
         self.n_cluster = None
-        self.cls_spike = None
+        self.cls_spike = None 
+
+        self.clust_exp = []
 
     def read_params(self):
         with open("params.json") as p:
@@ -68,16 +75,44 @@ class Clust:
         if os.path.isdir(self.params['Output']) == False:
             os.mkdir(self.params['Output'])
         
+        for exp_path in self.params['Experiments']:
+            os.chdir(exp_path)
+            cfg_file = 'config.ini'
+            config.read(cfg_file)
+            config.set('PROJECT', 'path', '{}/'.format(os.getcwd()))
+            with open(cfg_file, 'w+') as configfile:
+                config.write(configfile)
+            config.read(cfg_file)
+            exp = config['EXP']['name']
+            self.clust_exp.append([exp, exp_path])
+        
+    def get_clust_mean(self):
+        clust_flash_mean = []
+        clust_chirp_mean = []
+        clust_bias_fix = []
+        self.bias_index = np.asarray(self.bias_index)
+        for i in range(1,self.n_cluster +1):
+            cls_units = np.asarray(self.exp_unit, dtype='<U9')[self.cls_spike == i]
+            cls_chirp = self.chirp_psth[self.cls_spike == i]
+            cls_flash = self.flash_psth[self.cls_spike == i]
+            cls_bias = self.bias_index[self.cls_spike == i]
+            flash_mean = 0
+            chirp_mean = 0
+            bias_mean = []
+            for (uid, chirp, flash, bias) in zip(cls_units, cls_chirp, cls_flash, cls_bias):
+                flash_mean += flash
+                chirp_mean += chirp
+                if (not np.isnan(bias)):
+                    bias_mean.append(bias)
+            flash_mean=flash_mean/len(cls_units)
+            chirp_mean=chirp_mean/len(cls_units)
+            clust_flash_mean.append(flash_mean)
+            clust_chirp_mean.append(chirp_mean)
+            clust_bias_fix.append(bias_mean)
+        return clust_flash_mean, clust_chirp_mean, clust_bias_fix 
+    
     def get_bias_histogram(self):
         
-        chirp_dur = 35 
-        psth_bin = 0.06  # In sec
-        fit_resolution = 0.001  # In sec
-        chirp_time = np.linspace(0, chirp_dur, int(np.ceil((chirp_dur) / fit_resolution)))
-
-        flash_dur = 6
-        flash_time = np.linspace(0, flash_dur, int(np.ceil((flash_dur) / fit_resolution)))
-
         plt.figure(figsize=(16,self.n_cluster*1))
 
         ward_spike = cluster.hierarchy.linkage(self.spike_dst, method='ward')
@@ -103,8 +138,8 @@ class Clust:
                     bias_mean.append(bias)
                     bias_mean_aux.append(bias / 1000)
                 fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-                ax[0].plot(flash_time, flash)
-                ax[1].plot(chirp_time, chirp)     
+                ax[0].plot(self.flash_time, flash)
+                ax[1].plot(self.chirp_time, chirp)     
                 [_ax.clear() for _ax in ax]
                 fig.clf()
                 fig.clear()
@@ -122,6 +157,7 @@ class Clust:
             x = np.linspace(xmin, xmax, 100)
             y = norm.pdf(x, mean, std)
             ax.plot(x, y)
+
             if(i == self.n_cluster):
                 ax.set_title("BIAS Histogram", fontsize=16)
             #plt.xticks(())
@@ -133,7 +169,7 @@ class Clust:
             ax.spines['right'].set_visible(False)
             
             ax = plt.subplot(gs[(self.n_cluster-(i)),2])
-            ax.plot(chirp_time, chirp_mean)
+            ax.plot(self.chirp_time, chirp_mean)
             if(i == self.n_cluster):
                 ax.set_title("Chirp Response", fontsize=16)
             plt.xticks(())
@@ -144,7 +180,7 @@ class Clust:
             ax.spines['right'].set_visible(False)
             
             ax = plt.subplot(gs[(self.n_cluster-(i)),1])
-            ax.plot(flash_time, flash_mean)
+            ax.plot(self.flash_time, flash_mean)
             if(i == self.n_cluster):
                 ax.set_title("Flash Response", fontsize=16)
             plt.xticks(())
@@ -179,16 +215,9 @@ class Clust:
             ax.spines['left'].set_visible(False)
             ax.spines['right'].set_visible(False)
         plt.savefig('{}/dend_flash_chirp.png'.format(self.cls_folder))
+        return plt.gcf()
 
     def save_data(self):
-        chirp_dur = 35 
-        psth_bin = 0.06  # In sec
-        fit_resolution = 0.001  # In sec
-        chirp_time = np.linspace(0, chirp_dur, int(np.ceil((chirp_dur) / fit_resolution)))
-        
-        flash_dur = 6
-        flash_time = np.linspace(0, flash_dur, int(np.ceil((flash_dur) / fit_resolution)))
-
         np.save('{}/exp_id.npy'.format(self.cls_folder), np.array(self.exp_unit))
         np.save('{}/clust_result.npy'.format(self.cls_folder), np.array(self.cls_spike))
         np.save('{}/chirp_psth.npy'.format(self.cls_folder), self.chirp_psth)
@@ -204,8 +233,8 @@ class Clust:
 
             for (uid, chirp, flash) in zip(cls_units, cls_chirp, cls_flash):
                 fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-                ax[0].plot(flash_time, flash)
-                ax[1].plot(chirp_time, chirp)
+                ax[0].plot(self.flash_time, flash)
+                ax[1].plot(self.chirp_time, chirp)
 
                 ax[0].set_title('{}, {} flash'.format(uid[0], uid[1]))
                 ax[1].set_title('{}, {} chirp'.format(uid[0], uid[1]))
@@ -218,8 +247,8 @@ class Clust:
                 plt.close()
                         
             fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-            ax[0].plot(flash_time, np.mean(cls_flash, axis=0))
-            ax[1].plot(chirp_time, np.mean(cls_chirp, axis=0))
+            ax[0].plot(self.flash_time, np.mean(cls_flash, axis=0))
+            ax[1].plot(self.chirp_time, np.mean(cls_chirp, axis=0))
             ax[0].set_title('Mean flash')
             ax[1].set_title('Mean chirp')
             
@@ -231,7 +260,7 @@ class Clust:
             plt.close()
 
     def get_tsne(self):
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(4,2), dpi = 80)
 
         model = TSNE(n_components=2, random_state=0, perplexity=30)#,init='pca')
         proj = model.fit_transform(self.chirp_psth)
@@ -241,6 +270,7 @@ class Clust:
 
         ax.scatter(proj[:, 0], proj[:, 1], c=show_order[self.cls_spike - 1], cmap=ListedColormap(sns.hls_palette(n_flat_clusters, l=0.6, s=0.6).as_hex()))
         fig.savefig('{}/tsne.png'.format(self.cls_folder))
+        return fig
 
     def get_dendogram(self):
         # Mutal Info
@@ -261,38 +291,45 @@ class Clust:
             metric_scores[i] = metrics.adjusted_mutual_info_score(cls_isi, self.cls_spike)
             
         max_cls = np.argmax(metric_scores) + min_qclust
-        fig, ax = plt.subplots()
-        ax.plot(ncls, metric_scores)
+        fig_mut, ax_mut = plt.subplots(figsize=(4,2), dpi = 80)
+        ax_mut.plot(ncls, metric_scores)
 
-        ax.axvline(max_cls, ymin=0, ymax=(np.max(metric_scores) - ax.get_ylim()[0]) / np.diff(ax.get_ylim()),
+        ax_mut.axvline(max_cls, ymin=0, ymax=(np.max(metric_scores) - ax_mut.get_ylim()[0]) / np.diff(ax_mut.get_ylim()),
                 linestyle='--', color='gray')
-        if max_cls not in list(ax.get_xticks()):
-            ax.set_xticks(list(ax.get_xticks()) + [max_cls])
+        if max_cls not in list(ax_mut.get_xticks()):
+            ax_mut.set_xticks(list(ax_mut.get_xticks()) + [max_cls])
         print('Optimum clusters: {}'.format(max_cls))
-        fig.savefig('{}/mutual_inf.png'.format(self.cls_folder))
+        fig_mut.savefig('{}/mutual_inf.png'.format(self.cls_folder))
 
         # Dendogram
         self.n_cluster = max_cls
         self.cls_spike = cluster.hierarchy.fcluster(ward_spike, t=self.n_cluster, criterion='maxclust')
-        fig = plt.figure()
+        fig = plt.figure(figsize=(9,4), dpi = 80)
         dn = cluster.hierarchy.dendrogram(ward_spike, p=np.unique(self.cls_spike).shape[0], distance_sort='ascending',
                                         truncate_mode='lastp')
         plt.tight_layout()
         fig.savefig('{}/dendogram.png'.format(self.cls_folder))
-
+        return fig, fig_mut
+    
+    def read_cell(self, arg):
+        cell = Cell(arg[0], arg[1], arg[2], arg[3])
+        cell.set_chirp_response(arg[4])
+        cell.set_flash_response(arg[5])
+        cell.set_color_response(arg[7], arg[6], arg[8])
+        cell.check_quality()
+        cell.set_trial_response(self.chirp_time, arg[7])
+        
+        return cell
+    
     def set_folder(self):
         if os.path.isdir(self.params['Output']) == False:
             os.mkdir(self.params['Output'])
         else:
             shutil.rmtree(self.params['Output'])
             os.mkdir(self.params['Output'])
-        self.cls_folder = '{}/{}'.format(self.params['Output'], self.cls_folder)
-        if os.path.isdir(self.cls_folder) == False:
-            os.mkdir(self.cls_folder)
-        else:
-            shutil.rmtree(self.cls_folder)
-            os.mkdir(self.cls_folder)
-
+        self.cls_folder = '{}'.format(self.params['Output'])
+        print(self.cls_folder)
+        
     def compute_spike_distance(self):
         preload = False
         num_threads = mp.cpu_count()
@@ -322,7 +359,7 @@ class Clust:
                 self.isi_dst = np.asarray(isi_dst) 
             np.save('{}/isi_dist.npy'.format(self.cls_folder), isi_dst)
     
-    def get_data(self):
+    def get_data(self, exps):
         
         ctype_map = {'ON': 0, 'OFF': 1, 'ON/OFF': 2, 'Null': 3}
 
@@ -330,8 +367,8 @@ class Clust:
         stimuli = chirp_stimuli["full_signal"]
         
         rootdir = os.getcwd()
-        
-        for exp_path in self.params['Experiments']:
+        num_threads = mp.cpu_count()
+        for exp_path in exps:
             os.chdir(exp_path)
             cfg_file = 'config.ini'
             config.read(cfg_file)
@@ -350,7 +387,7 @@ class Clust:
             sub_events_path = os.path.join(config['SYNC']['folder'],
                                     'sub_event_list_{}_chirp.csv'.format(exp))
             output_features = os.path.join(config['SYNC']['folder'],
-                                        'chirp_features_{}.csv'.format(exp))
+                                            'chirp_features_{}.csv'.format(exp))
 
             sorting = config['FILES']['sorting']
 
@@ -359,24 +396,25 @@ class Clust:
             sr = 20000.0 / 1000.0  
             fields_df = ['start_event', 'end_event']
             cfields_df = ['start_event', 'start_next_event']
-            
+                
             #Colors
-            # events = pd.read_csv(sync_file)  
-            # col_mask = events['protocol_name'] == 'flash'
+            events = pd.read_csv(sync_file)  
+            col_mask = events['protocol_name'] == 'flash'
 
-            # blue_mask = col_mask & (events['extra_description'] == 'blue')
-            # green_mask = col_mask & (events['extra_description'] == 'green')
-            # print(blue_mask)
-            # blue_time = np.array(events[blue_mask][cfields_df]) / sr
-            # green_time = np.array(events[green_mask][cfields_df]) / sr
-            
-            # blue_dur = np.max(np.diff(blue_time[:-1], axis=1))
-            # green_dur = np.max(np.diff(green_time[:-1], axis=1))
-            # color_dur = blue_dur + green_dur
-            
-            # blue_time[-1][1] = blue_time[-1][0] + blue_dur
-            # green_time[-1][1] = green_time[-1][0] + green_dur
-            
+            blue_mask = col_mask & (events['extra_description'] == 'blue')
+            green_mask = col_mask & (events['extra_description'] == 'green')
+            blue_time = np.array(events[blue_mask][cfields_df]) / sr
+            green_time = np.array(events[green_mask][cfields_df]) / sr
+            if(not np.any(blue_time)):
+                blue_dur = 0
+            else:
+                blue_dur = np.max(np.diff(blue_time[:-1], axis=1))
+                green_dur = np.max(np.diff(green_time[:-1], axis=1))
+                color_dur = blue_dur + green_dur
+                    
+                blue_time[-1][1] = blue_time[-1][0] + blue_dur
+                green_time[-1][1] = green_time[-1][0] + green_dur
+                
             events = get_chirp_subevents(sync_file, start_end_path, repeated_path, sub_events_path, names, times)
             if isinstance(events, pd.DataFrame) is not True:
                 print('Error computing chirp sub events')
@@ -402,10 +440,18 @@ class Clust:
             bound_time = np.array([freq_time[:, 0], adap2_time[:, 1]]).T
             flash_bound = np.array([on_time[:, 0], off_time[:, 1]]).T / 1000
 
+            flash_dur = 6
+
+            chirp_dur = 35 
             psth_bin = 0.06  # In sec
             fit_resolution = 0.001  # In sec
-
+            self.chirp_time = np.linspace(0, chirp_dur, int(np.ceil((chirp_dur) / fit_resolution)))
+            self.flash_time = np.linspace(0, flash_dur, int(np.ceil((flash_dur) / fit_resolution)))
+            color_dur_2 = 12
+            self.color_time = np.linspace(0, color_dur_2, int(np.ceil((color_dur_2) / fit_resolution)))
             filtered_cells = 0
+            if(not np.any(blue_time)):
+                self.color_time = self.flash_time
 
             with h5py.File(sorting, 'r') as spks:
                 idxs = list(spks['spiketimes'].keys())
@@ -420,28 +466,42 @@ class Clust:
                 feat['exp'] = exp        
                 if self.pcells is None: self.pcells = feat.reset_index()
                 else: self.pcells = self.pcells.append(feat.reset_index(), ignore_index=True)
+
+                cell_args = []
+                cell_aux = []
+                    
+                with mp.Pool(num_threads) as pool:
+                    for i, idx in enumerate(idxs):
+                        name = (exp, uidx[i], idx)
+                        indexer = ctype_map[feat[feat.index == uidx[i]].flash_type[0]]
+                        quality = feat['QI'][uidx[i]]                   
+                        bias = feat["bias_idx"][uidx[i]]
+                        flash_trials = spkt.get_trials(np.unique(spks['spiketimes'][idx][:].flatten() / sr) / 1000, flash_bound[:, 0], flash_bound[:, 1])
+                        chirp_trials = spkt.get_trials(np.unique(spks['spiketimes'][idx][:].flatten() / sr), on_time[:, 0], adap2_time[:, 1])
+                        if(not np.any(blue_time)):
+                            blue_trials = []
+                            green_trials = []
+                        else:
+                            blue_trials = spkt.get_trials(np.unique(spks['spiketimes'][idx][:].flatten() / sr), blue_time[:, 0], blue_time[:, 1])
+                            green_trials = spkt.get_trials(np.unique(spks['spiketimes'][idx][:].flatten() / sr), green_time[:, 0], green_time[:, 1])
+                        cell_args.append([name, indexer, quality, bias,  chirp_trials, flash_trials, green_trials, blue_trials, blue_dur])
+                    pool_cells = list(tqdm(pool.imap(self.read_cell, cell_args), total=len(cell_args)))      
+                    cell_aux = np.asarray(pool_cells)    
                 
-                for i, idx in enumerate(idxs):
-                    name = (exp, uidx[i], idx)
-                    indexer = ctype_map[feat[feat.index == uidx[i]].flash_type[0]]
-                    quality = feat['QI'][uidx[i]]                   
-                    bias = feat["bias_idx"][uidx[i]]
-                    cell = Cell(name, indexer, quality, bias, spks)
-                    cell.set_chirp_response(spks, on_time, adap2_time, sr)
-                    cell.set_flash_response(spks, flash_bound, sr)
-                    cell.check_quality()
-                    if(cell.low_spikes):
+                for cell in cell_aux:
+                    if(cell.low_spikes):                      
                         filtered_cells += 1
                     else:
                         self.exp_unit.append(cell.exp_unit)
                         self.spiketimes.append(cell.spiketimes)
                         self.chirp_psth.append(cell.chirp_psth)
                         self.flash_psth.append(cell.flash_psth)
-                        self.bias_index.append(cell.bias_index)
-                    
+                        self.bias_index.append(cell.bias_index)   
+                        self.cells.append(cell)     
                     # gs = get_cell_trials(chirp_trials_cell, flash_trials_cell, self.chirp_time, color_time, chirp_resp, color_resp, exp, uidx[i], stimuli, indexer, self.cls_folder)
-            print('{} cells below minimum spikes constraint.'.format(filtered_cells))
-            print('{} cells valid for {}\n'.format(len(uidx) - filtered_cells, exp))
+                    
+                print('{} cells below minimum spikes constraint.'.format(filtered_cells))
+                print('{} cells valid for {}\n'.format(len(uidx) - filtered_cells, exp))
 
         self.chirp_psth = np.asarray(self.chirp_psth)
         self.flash_psth = np.asarray(self.flash_psth)

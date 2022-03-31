@@ -4,6 +4,7 @@ import matplotlib.gridspec as gridspec
 import os
 import numpy as np
 import pyspike
+
 def create_subplot_ax(position, plot = None, visible = True, tick = True,  title = "", xlim = None , ylim = None, y = None ):
     ax = plt.subplot(position)
     if(len(plot) == 1):

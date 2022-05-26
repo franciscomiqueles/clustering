@@ -31,8 +31,8 @@ class start_view():
             if(value[j].get()):
                 new.append(self.clust.clust_exp[j][1])
         if bool(new):
-            for i in new:
-                self.clust.get_data([i])
+            print(new)
+            self.clust.get_data(new)
             self.clust.compute_spike_distance()
             self.cell_button = Tk.Button(self.master, text = "Cell View", command= self.start_cell_view)
             self.cell_button.grid(row = 2, column = 1, padx = 10)

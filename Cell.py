@@ -2,18 +2,24 @@ from spikelib import spiketools as spkt
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import os
-from functions import format_to_pyspike, create_subplot_ax
+from functions import format_to_pyspike, create_subplot_ax, time_to_amp
+from extract_features import plot_features, plot_resp
+import h5py
+import pandas as pd
 import numpy as np
+from tqdm import tqdm
 
 class Cell:
 
-    def __init__(self, exp, indexer, quality, bias): #blue_time, green_time
+    def __init__(self, exp, indexer, quality, bias, on_info, off_info): #blue_time, green_time
         #Cell Info
         self.exp_unit = exp
         self.spiketimes = None
         self.bias_index = bias
         self.type = indexer
         self.quality = quality
+        self.on_info = on_info
+        self.off_info = off_info
         #Trials
         self.trials = []
         self.trials_color = []
@@ -26,6 +32,64 @@ class Cell:
         self.color_psth = None
         #If cell is not usable for clustering
         self.low_spikes = False
+        self.max_freq_response_on = None
+        self.max_freq_response_off = None
+        self.ensembles_on = []
+        self.ensembles_off = []
+
+    def set_cell_analysis(self, peaks_on, peaks_off, resp_info):
+        
+        if self.type == 'ON' or self.type == 'ON/OFF':            
+            self.peaks_on = peaks_on
+
+        if self.type == 'OFF' or self.type == 'ON/OFF':
+            self.peaks_off = peaks_off
+        
+        self.resp_info = resp_info
+            
+    def get_analysis(self, resp_file, feat_file, resp_dir, feat_dir):
+        with h5py.File(resp_file, 'r') as resp:
+            plot_resp(self.exp_unit[1], resp, feat_file, resp_dir)
+            plot_features(self.exp_unit[1], resp, feat_file, feat_dir)
+            plt.close('all')
+    
+    def get_max_response(self, resp_file):
+        with h5py.File(resp_file, 'r') as resp:
+            data = resp['{}/cell_resp/'.format(self.exp_unit[1])]
+            if self.type == 0 or self.type == 2:
+                t = data['freq_on_peaks'][:][0]
+                v = data['freq_on_peaks'][:][1]
+                self.max_freq_response_on = max(v)
+            if self.type == 1 or self.type == 2:
+                t = data['freq_off_peaks'][:][0]
+                v = data['freq_off_peaks'][:][1]
+                self.max_freq_response_off = max(v)
+
+    def get_ensembles(self, file, n, it):
+        if(self.type == 0 or self.type == 2):
+            df_feat = pd.read_csv(file, index_col=0)
+            info = df_feat.loc[df_feat['unit'] == self.exp_unit[1]]
+            if(not info.empty):
+                for i in range(1, n+1):
+                    if(self.type == 2):
+                        info = info.loc[info["flash_type"] == "ON"]
+                    self.ensembles_on.append(info.loc[:,"Ensemble_{}".format(i)].item())
+                print("EXP: {} has ensembles {}".format(self.exp_unit[1], self.ensembles_on))
+                print(it)
+        if(self.type == 1 or self.type == 2):
+            df_feat = pd.read_csv(file, index_col=0)
+            info = df_feat.loc[df_feat['unit'] == self.exp_unit[1]]
+            if(not info.empty):
+                for i in range(1, n+1):
+                    if(self.type == 2):
+                        info = info.loc[info["flash_type"] == "OFF"]
+                    self.ensembles_off.append(info.loc[:,"Ensemble_{}".format(i)].item())
+                print("EXP: {} has ensembles {}".format(self.exp_unit[1], self.ensembles_off))
+                print(it)
+        it= it+1
+        return(it)
+                
+
 
     def set_chirp_response(self, chirp_trials):
         chirp_dur = 35 
@@ -69,9 +133,9 @@ class Cell:
             if t[~m].shape[0] > 0:
                 print(t[~m])
 
-        spikes_flash = spkt.flatten_trials(flash_trials)
-        (psth, _) = np.histogram(spikes_flash, bins=flash_bins)
-        self.flash_psth = spkt.est_pdf(flash_trials, flash_time, bandwidth=psth_bin, norm_factor=psth.max())
+        spikes_flash = spkt.flatten_trials(sec_trials)
+        (psth, _) = np.histogram(spikes_flash , bins=flash_bins)
+        self.flash_psth = spkt.est_pdf(sec_trials, flash_time, bandwidth=psth_bin, norm_factor=psth.max())
 
     def set_color_response(self, blue_trials, green_trials, blue_dur):
         
@@ -122,18 +186,17 @@ class Cell:
                 flash_resp = spkt.est_pdf([self.trials_flash[j]/1000], flash_time, bandwidth=psth_bin, norm_factor=psth.max())
                 self.flash_trials_psth.append(flash_resp)
 
-    
     def check_quality(self):
 
-        if self.quality < 0.45:
+        if self.quality < 0.001:
             self.low_spikes = True
         
         for t in self.trials:
 
-            if t.shape[0] < 20:
+            if t.shape[0] < 1:
                 self.low_spikes = True
             break 
-    
+  
     def get_cell_figure(self, cls_folder, stimuli):
         fig = plt.figure(figsize=(16,20))
 
@@ -194,6 +257,4 @@ class Cell:
         plt.savefig('{}/{}/{}.png'.format(cls_folder, self.exp_unit[0], self.exp_unit[1]))
         fig.clf()
         plt.close(fig)
-        
-
 

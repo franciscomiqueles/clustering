@@ -4,6 +4,7 @@ import matplotlib.gridspec as gridspec
 import os
 import numpy as np
 import pyspike
+from scipy.stats import norm
 
 def create_subplot_ax(position, plot = None, visible = True, tick = True,  title = "", xlim = None , ylim = None, y = None ):
     ax = plt.subplot(position)
@@ -37,7 +38,27 @@ def get_cell_trials(chirp_trials, flash_trials, chirp_time, flash_time, chirp_ps
     m_f = np.max(flash_trials) + 5
     
     gs = gridspec.GridSpec(23, 3, width_ratios = plot_widths, wspace=0.1, hspace=0.1)
-    
+
+    if(indexer == 0):
+        if os.path.isdir('{}/ON/'.format(cls_folder)) == False:
+            os.mkdir('{}/ON/'.format(cls_folder))
+        
+        
+    if(indexer == 1):
+        if os.path.isdir('{}/OFF/'.format(cls_folder)) == False:
+            os.mkdir('{}/OFF/'.format(cls_folder))
+       
+        
+    if(indexer == 2):
+        if os.path.isdir('{}/ON-OFF/'.format(cls_folder)) == False:
+            os.mkdir('{}/ON-OFF/'.format(cls_folder))
+       
+        
+    if(indexer == 3):
+        if os.path.isdir('{}/Null/'.format(cls_folder)) == False:
+            os.mkdir('{}/Null/'.format(cls_folder))
+       
+
     if(indexer == 0):
         if os.path.isdir('{}/ON/{}/'.format(cls_folder, exp)) == False:
             os.mkdir('{}/ON/{}/'.format(cls_folder, exp))
@@ -49,14 +70,16 @@ def get_cell_trials(chirp_trials, flash_trials, chirp_time, flash_time, chirp_ps
         cls_folder = '{}/OFF/'.format(cls_folder)
         
     if(indexer == 2):
-        if os.path.isdir('{}/{}/'.format(cls_folder, exp)) == False:
-            os.mkdir('{}/{}/'.format(cls_folder, exp))
+        if os.path.isdir('{}/ON-OFF/{}/'.format(cls_folder, exp)) == False:
+            os.mkdir('{}/ON-OFF/{}/'.format(cls_folder, exp))
         cls_folder = '{}/ON-OFF/'.format(cls_folder)
         
     if(indexer == 3):
-        if os.path.isdir('{}/{}/'.format(cls_folder, exp)) == False:
+        if os.path.isdir('{}/Null/{}/'.format(cls_folder, exp)) == False:
             os.mkdir('{}/Null/{}/'.format(cls_folder, exp))
         cls_folder = '{}/Null/'.format(cls_folder)
+
+    
         
         
         
@@ -204,3 +227,18 @@ def format_to_pyspike(trials, stim_dur):
     for t in trials:
         st.append(pyspike.SpikeTrain(t, stim_dur))
     return st
+    
+def get_fit(func):
+    mean,std = norm.fit(func)
+    xmin, xmax = plt.xlim()
+    if std==0:
+        std=0.25
+            
+    x = np.linspace(xmin, xmax, 100)
+    y = norm.pdf(x, mean, std)
+    return x, y
+     
+def time_to_amp(arr):
+    # Time axis changed to amplitude modulation
+    # Max aplitude is 0.5. 0.125 added because of time_adap stim at the end
+    return np.multiply(np.ones_like(arr) * 0.625 / 10, arr, out=np.full_like(arr, np.nan, dtype=np.double), where=arr!=np.nan)
